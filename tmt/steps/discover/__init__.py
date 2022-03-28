@@ -190,6 +190,9 @@ class DiscoverPlugin(tmt.steps.Plugin):
     # List of all supported methods aggregated from all plugins
     _supported_methods = []
 
+    # Common keys for all discover step implementations
+    _common_keys = ["dist-git-source", "dist-git-type"]
+
     @classmethod
     def base_command(cls, method_class=None, usage=None):
         """ Create base click command (common for all discover plugins) """
@@ -215,6 +218,19 @@ class DiscoverPlugin(tmt.steps.Plugin):
             Discover._save_context(context)
 
         return discover
+
+    @classmethod
+    def options(cls, how=None):
+        """ Prepare command line options for given method """
+        return [
+            click.option(
+                '--dist-git-source', is_flag=True,
+                help='Extract DistGit sources'),
+            click.option(
+                '--dist-git-type',
+                type=click.Choice(tmt.utils.get_distgit_handler_names()),
+                help='Use the provided DistGit handler instead of detection.'),
+            ] + super().options(how)
 
     def tests(self):
         """

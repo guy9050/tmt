@@ -416,6 +416,7 @@ class Common(object):
 
         # Fail nicely if the working directory does not exist
         if cwd and not os.path.exists(cwd):
+            breakpoint()
             raise GeneralError(
                 f"The working directory '{cwd}' does not exist.")
 
@@ -1780,3 +1781,31 @@ def get_distgit_handler(remotes=None, usage_name=None):
 def get_distgit_handler_names():
     """ All known distgit handlers """
     return [i.usage_name for i in DistGitHandler.__subclasses__()]
+
+
+def find_fmf_root(path: str, just_top=False) -> list[str]:
+    """
+    Search trough path and return all fmf roots that exist there
+
+    If `just_top` is True it will return single item
+
+    Raise MetadataError if no fmf root is found
+    """
+    min_len = None
+    top_path = None
+    fmf_roots = []
+    for root, _, files in os.walk(path):
+        if not os.path.basename(root) == '.fmf':
+            continue
+        if 'version' in files:
+            candidate = os.path.dirname(root)
+            fmf_roots.append(candidate)
+            if just_top and (min_len is None or len(candidate) < min_len):
+                min_len = len(candidate)
+                top_path = candidate
+    if len(fmf_roots) == 0:
+        raise MetadataError(f"No fmf root present inside {path}")
+    if just_top:
+        return [top_path]
+    else:
+        return fmf_roots
