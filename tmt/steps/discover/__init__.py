@@ -47,6 +47,12 @@ class Discover(tmt.steps.Step):
             for test in self.tests()])
         self.write('run.yaml', tmt.utils.dict_to_yaml(tests, width=1000000))
 
+    @property
+    def is_in_standalone_mode(self):
+        if self.opt('fmf_id'):
+            return True
+        return super().is_in_standalone_mode
+
     def _discover_from_execute(self):
         """ Check the execute step for possible shell script tests """
 
@@ -156,8 +162,6 @@ class Discover(tmt.steps.Step):
 
         # Show fmf identifiers for tests discovered in plan
         if self.opt('fmf_id'):
-            # don't run steps except discover
-            self._context.obj.steps = {'discover'}
             if self.tests():
                 fmf_id_list = [tmt.utils.dict_to_yaml(test.fmf_id, start=True)
                                for test in self.tests()

@@ -950,6 +950,21 @@ class Plan(Core):
         for step in self.steps(disabled=True):
             step.setup_actions()
 
+        # Check if steps are not in stand-alone mode
+        standalone = set()
+        for name, step in zip(self.steps(names=True), self.steps()):
+            if step.is_in_standalone_mode:
+                standalone.add(name)
+        if len(standalone) > 1:
+            raise tmt.utils.GeneralError(
+                f'These steps require running on their own, their combination '
+                f'with the given options is not compatible: '
+                f'{fmf.utils.listed(standalone)}.')
+        elif standalone:
+            self._context.obj.steps = standalone
+            self.debug(
+                f'Standalone mode steps: {fmf.utils.listed(standalone)}')
+
         # Run enabled steps except 'finish'
         self.debug('go', color='cyan', shift=0, level=2)
         try:
