@@ -9,10 +9,12 @@ import re
 import traceback
 import xmlrpc.client
 from functools import lru_cache
+from platform import release
 
 import fmf
 from click import echo, style
 
+import tmt
 import tmt.utils
 from tmt.utils import ConvertError, check_git_url, markdown_to_html
 
@@ -221,14 +223,17 @@ def bz_set_coverage(bz_instance, bug_ids, case_id):
 def export_to_nitrate(test):
     """ Export fmf metadata to nitrate test cases """
     import_nitrate()
-    new_test_created = False
 
     # Check command line options
     create = test.opt('create')
     general = test.opt('general')
+    release = test.opt('release')
     duplicate = test.opt('duplicate')
     link_bugzilla = test.opt('bugzilla')
     dry_mode = test.opt('dry')
+
+    if release:
+        general = True
 
     if link_bugzilla:
         import_bugzilla()
@@ -301,14 +306,8 @@ def export_to_nitrate(test):
     # First remove any components that are already there
     if not dry_mode:
         nitrate_case.components.clear()
-    if general and nitrate_case:
-        # Remove also all general plans linked to testcase
-        for nitrate_plan in [plan for plan in nitrate_case.testplans]:
-            if nitrate_plan.type.name == "General":
-                echo(style(
-                    f"Removed general plan '{nitrate_plan}'.", fg='red'))
-                if not dry_mode:
-                    nitrate_case.testplans.remove(nitrate_plan)
+    # Only these general plans should stay
+    expected_general_plans = set()
     # Then add fmf ones
     if test.component:
         echo(style('components: ', fg='green') + ' '.join(test.component))
@@ -325,16 +324,29 @@ def export_to_nitrate(test):
             if general:
                 try:
                     general_plan = find_general_plan(component)
+                    expected_general_plans.add(general_plan)
                     echo(style(
                         f"Linked to general plan '{general_plan}'.",
                         fg='magenta'))
                     if not dry_mode:
                         nitrate_case.testplans.add(general_plan)
+                    if release:
+                        add_to_nitrate_release(
+                            nitrate_case, general_plan, test, dry_mode)
                 except nitrate.NitrateError as error:
                     log.debug(error)
                     echo(style(
-                        f"Failed to link general test plan for '{component}'.",
+                        f"Failed to find general test plan for '{component}'.",
                         fg='red'))
+    # Remove unexpected general plans
+    if general and nitrate_case:
+        # Remove also all general plans linked to testcase
+        for nitrate_plan in [plan for plan in nitrate_case.testplans]:
+            if nitrate_plan.type.name == "General" and nitrate_plan not in expected_general_plans:
+                echo(style(
+                    f"Removed general plan '{nitrate_plan}'.", fg='red'))
+                if not dry_mode:
+                    nitrate_case.testplans.remove(nitrate_plan)
 
     # Tags
     # Convert 'tier' attribute into a Tier tag
@@ -495,6 +507,57 @@ def export_to_nitrate(test):
                 [f"BZ#{bz_id}" for bz_id in verifies_bug_ids])), fg='magenta'))
         except Exception as err:
             raise ConvertError("Couldn't update bugs", original=err)
+
+
+def add_to_nitrate_release(nitrate_case, general_plan, test, dry_mode):
+    """
+    Go down plan tree from general plan, add case and case run to all open runs.
+
+    Try to apply adjust
+    """
+    for child_plan in nitrate.TestPlan.search(parent=general_plan.id):
+        for testrun in child_plan.testruns:
+            if testrun.status == nitrate.RunStatus("FINISHED"):
+                continue
+            if not enabled_for_environment(test, tcms_notes=testrun.notes):
+                continue
+            if not nitrate_case or child_plan not in nitrate_case.testplans:
+                echo(style(f"Link to plan '{child_plan}'.", fg='magenta'))
+                if not dry_mode:
+                    nitrate_case.testplans.add(child_plan)
+            if not nitrate_case or nitrate_case not in [
+                    caserun.testcase for caserun in testrun]:
+                echo(style(f"Link to run '{testrun}'.", fg='magenta'))
+                if not dry_mode:
+                    nitrate.CaseRun(testcase=nitrate_case, testrun=testrun)
+
+
+def enabled_for_environment(test, tcms_notes):
+    """ Whether test is enabled for specified environment """
+    field = tmt.utils.StructuredField(tcms_notes)
+    context_dict = {}
+    try:
+        for line in field.get('environment').split('\n'):
+            try:
+                dimension, values = line.split('=', maxsplit=2)
+                context_dict[dimension.strip()] = [v.strip()
+                                                   for v in values.split(',')]
+            except ValueError:
+                pass
+    except tmt.utils.StructuredFieldError:
+        pass
+
+    if not context_dict:
+        return True
+
+    try:
+        context = fmf.context.Context(**context_dict)
+        t1 = test.node.copy()
+        t1.adjust(context)
+        return tmt.Test(t1).enabled
+    except BaseException as exp:
+        log.debug(f"Failed to process adjust: {exp}")
+        return True
 
 
 def check_md_file_respects_spec(md_path):

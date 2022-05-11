@@ -553,6 +553,10 @@ def import_(
     '--general / --no-general', default=False,
     help="Link Nitrate case to component's General plan. Disabled by default. "
          "Note that this will unlink any previously connected general plans.")
+@click.option('--release / --no-release',
+              default=False,
+              help="Link Nitrate case to all open runs of descendant plans of General plan. "
+              "Disabled by default. Implies --general option.")
 @click.option(
     '--format', 'format_', default='yaml', show_default=True, metavar='FORMAT',
     help='Output format (yaml or dict).')
