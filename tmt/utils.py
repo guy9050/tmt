@@ -662,7 +662,13 @@ class Common(object):
             self._workdir_cleanup(workdir)
 
         # Create the workdir
-        create_directory(workdir, 'workdir', quiet=True)
+        if workdir.startswith(WORKDIR_ROOT):
+            create_directory(workdir, 'workdir', quiet=True)
+            # Set 777 permissions to not block other users from using WORKDIR_ROOT
+            # https://stackoverflow.com/questions/37118558/python3-os-mkdir-does-not-enforce-correct-mode
+            os.chmod(WORKDIR_ROOT, 0o777)
+        else:
+            create_directory(workdir, 'workdir', quiet=True)
         self._workdir = workdir
 
     def _workdir_name(self) -> Optional[str]:
